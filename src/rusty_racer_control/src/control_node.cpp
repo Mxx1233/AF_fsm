@@ -35,8 +35,6 @@
 #include <tf2/utils.h>  // NOLINT(build/include_order)
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 
-#include <sensor_msgs/image_encodings.hpp>
-
 #include "rusty_racer_control/common.h"
 #include "rusty_racer_control/laengsfuehrung_controller.h"
 #include "rusty_racer_control/lateral_controller.h"
@@ -114,16 +112,9 @@ ControlNode::ControlNode()
     "/traffic_sign", 10,
     std::bind(&ControlNode::trafficSignCallback, this, std::placeholders::_1));
 
-  sub_image_ = this->create_subscription<sensor_msgs::msg::Image>(
-    "/camera/camera/color/image_raw", 10,
-    std::bind(&ControlNode::imageCallback, this, std::placeholders::_1));
-
   // -- Publishers --------------------------------------------------------
   motor_cmd_pub_ = this->create_publisher<rusty_racer_interfaces::msg::MotorCommand>(
     "/motor_command", 10);
-
-  pub_debug_ = this->create_publisher<sensor_msgs::msg::Image>(
-    "control/debug_overlay", 10);
 
   // -- Startup log -------------------------------------------------------
   RCLCPP_INFO(this->get_logger(), "=================================");
@@ -141,7 +132,6 @@ ControlNode::ControlNode()
     this->get_logger(), "PI  Kp=%.2f  Ki=%.4f  v_max=%.2fm/s",
     pi_params_.Kp, pi_params_.Ki, pi_params_.v_max);
   RCLCPP_INFO(this->get_logger(), "v_ref=%.2f m/s", v_ref_);
-  RCLCPP_INFO(this->get_logger(), "Visualization: control/debug_overlay");
   RCLCPP_INFO(this->get_logger(), "=================================");
 }
 
@@ -175,19 +165,6 @@ void ControlNode::trafficSignCallback(
   // signIdToType(int) overload. Returns empty CamFrame for unknown / invalid.
   latest_cam_frame_ = toCamFrame(*msg);
   last_traffic_update_ = this->now();
-}
-
-// =============================================================================
-//  Image callback (buffers camera frame for debug overlay)
-// =============================================================================
-
-void ControlNode::imageCallback(const sensor_msgs::msg::Image::SharedPtr msg)
-{
-  try {
-    current_image_ = cv_bridge::toCvCopy(msg, "bgr8")->image;
-  } catch (cv_bridge::Exception & e) {
-    RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
-  }
 }
 
 // =============================================================================
@@ -251,18 +228,6 @@ void ControlNode::laneCallback(
   // -- Lateral control: 3-param PD (no curvature feedforward) ------------
   double delta = lateral_controller_->compute(y, y_target_, phi_k);
 
-  // -- Debug overlay -----------------------------------------------------
-  if (!current_image_.empty()) {
-    cv::Mat debug_view = current_image_.clone();
-    drawControlOverlay(debug_view, delta, v_cmd);
-
-    sensor_msgs::msg::Image::SharedPtr out_msg =
-      cv_bridge::CvImage(std_msgs::msg::Header(), "bgr8", debug_view).toImageMsg();
-    out_msg->header.stamp = this->now();
-    out_msg->header.frame_id = "camera_link";
-    pub_debug_->publish(*out_msg);
-  }
-
   // -- Publish motor command ---------------------------------------------
   auto cmd = rusty_racer_interfaces::msg::MotorCommand();
   cmd.header = msg->header;
@@ -270,39 +235,6 @@ void ControlNode::laneCallback(
   // Negate delta: coordinate system correction (trajectory already inverted)
   cmd.steering_angle = -delta;
   motor_cmd_pub_->publish(cmd);
-}
-
-// =============================================================================
-//  Debug overlay drawing helper
-// =============================================================================
-
-void ControlNode::drawControlOverlay(
-  cv::Mat & img, double steering_angle, double velocity)
-{
-  int h = img.rows;
-  int w = img.cols;
-  cv::Point center_bottom(w / 2, h);
-
-  // Steering arrow
-  double arrow_len = h * 0.35;
-  cv::Point arrow_tip;
-  arrow_tip.x = center_bottom.x - static_cast<int>(arrow_len * std::sin(steering_angle));
-  arrow_tip.y = center_bottom.y - static_cast<int>(arrow_len * std::cos(steering_angle));
-
-  cv::Scalar color(255, 255, 0);   // Cyan (BGR)
-  cv::arrowedLine(img, center_bottom, arrow_tip, color, 5, 8, 0, 0.1);
-
-  // Text overlay
-  std::string txt_steer = "Steer: " + std::to_string(steering_angle);
-  std::string txt_vel = "Vel Ref: " + std::to_string(velocity);
-
-  cv::rectangle(img, cv::Point(0, 0), cv::Point(250, 80), cv::Scalar(0, 0, 0), -1);
-  cv::putText(
-    img, txt_steer, cv::Point(10, 30),
-    cv::FONT_HERSHEY_SIMPLEX, 0.8, color, 2);
-  cv::putText(
-    img, txt_vel, cv::Point(10, 65),
-    cv::FONT_HERSHEY_SIMPLEX, 0.8, color, 2);
 }
 
 // =============================================================================

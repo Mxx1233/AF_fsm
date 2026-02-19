@@ -28,12 +28,6 @@
 // ROS2 headers
 #include <rclcpp/rclcpp.hpp>
 #include <nav_msgs/msg/odometry.hpp>
-#include <sensor_msgs/msg/image.hpp>
-
-// OpenCV / cv_bridge headers
-#include <cv_bridge/cv_bridge.h>  // NOLINT(build/include_order)
-#include <opencv2/opencv.hpp>
-
 // Project interface headers
 #include "rusty_racer_interfaces/msg/lane_deviation.hpp"
 #include "rusty_racer_interfaces/msg/motor_command.hpp"
@@ -68,11 +62,6 @@ private:
   void trafficSignCallback(
     const rusty_racer_interfaces::msg::TrafficSign::SharedPtr msg);
 
-  void imageCallback(const sensor_msgs::msg::Image::SharedPtr msg);
-
-  // -- Debug overlay helper --------------------------------------------
-  void drawControlOverlay(cv::Mat & img, double steering_angle, double velocity);
-
   // -- Controllers -----------------------------------------------------
   std::unique_ptr < LateralController > lateral_controller_;
   PIParams pi_params_;
@@ -99,16 +88,11 @@ private:
   double current_psi_k_;
   rclcpp::Time last_update_time_;
 
-  // -- Debug overlay image buffer --------------------------------------
-  cv::Mat current_image_;
-
   // -- ROS2 communication ----------------------------------------------
   rclcpp::Subscription < nav_msgs::msg::Odometry > ::SharedPtr odom_sub_;
   rclcpp::Subscription < rusty_racer_interfaces::msg::LaneDeviation > ::SharedPtr lane_sub_;
   rclcpp::Subscription < rusty_racer_interfaces::msg::TrafficSign > ::SharedPtr traffic_sign_sub_;
-  rclcpp::Subscription < sensor_msgs::msg::Image > ::SharedPtr sub_image_;
   rclcpp::Publisher < rusty_racer_interfaces::msg::MotorCommand > ::SharedPtr motor_cmd_pub_;
-  rclcpp::Publisher < sensor_msgs::msg::Image > ::SharedPtr pub_debug_;
 };
 
 #endif  // RUSTY_RACER_CONTROL__CONTROL_NODE_H_
